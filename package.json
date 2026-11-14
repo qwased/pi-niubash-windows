@@ -1,0 +1,49 @@
+{
+  "name": "pi-niubash-windows",
+  "version": "0.1.0",
+  "description": "Niubash (native Windows bash) as a Pi tool, coexisting with Pi's PowerShell tool.",
+  "license": "MIT",
+  "author": "qwased",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "niubash",
+    "bash",
+    "windows",
+    "shell"
+  ],
+  "files": [
+    "src",
+    "skill",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skill"
+    ]
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.5.2",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "test": "node --test test/unit.test.mjs",
+    "test:smoke": "node test/smoke.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
