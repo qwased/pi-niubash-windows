@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      # No install step on purpose: the unit tests use Node's type stripping and `node:` builtins
+      # only (src/tool.ts imports the SDK for types), so they pass on a bare checkout.
       - name: Run unit tests
         run: npm test
 
