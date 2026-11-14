@@ -6,8 +6,8 @@ for Windows — and keeps Pi's built-in PowerShell tool untouched next to it.
 
 - No WSL, no MSYS/Git Bash, no path-conversion variables.
 - Reuses Pi's own shell pipeline: 2000-line / 50KB truncation with full output in a temp file,
-  timeouts with process-tree kill, streaming updates, `PI_SESSION_ID`-style environment, native TUI
-  rendering.
+  timeouts with a best-effort process-tree kill, streaming updates, `PI_SESSION_ID`-style
+  environment, native TUI rendering.
 - Registers as `niubash`, never overriding `bash` or `powershell`.
 
 ---
@@ -18,7 +18,7 @@ for Windows — and keeps Pi's built-in PowerShell tool untouched next to it.
 |---|---|
 | Pi | `@earendil-works/pi-coding-agent` ≥ 1.5 |
 | Niubash | 1.5.0 or later (`niu.exe`, MIT, <https://unixwin.dev>) |
-| OS | Windows 10 / 11 (the tool is Windows-only; the extension itself loads anywhere) |
+| OS | Windows 10 / 11 (the extension is inert on other platforms: it registers no tool and adds no prompt rules) |
 | Node (dev only) | ≥ 22.18 for running the TypeScript sources directly in tests |
 
 `niu.exe` is resolved at extension load. If it is missing, the tool is still registered but every
@@ -63,7 +63,10 @@ The tool description tells the model that:
 - output is truncated to the **last 2000 lines or 50KB**, full output goes to a temp file whose path
   is reported;
 - exit codes propagate and a non-zero exit is an error result;
-- there is **no default timeout** — pass `timeout` in seconds when a run must be capped;
+- there is **no default timeout** — pass `timeout` in seconds (it must be greater than 0) when a run
+  must be capped;
+- a single command is limited by the Windows command line (**about 32K characters**); write longer
+  scripts to a file and run that file;
 - paths are Windows-native first-class (`C:/…`, `/d/…`, `D:`, `/tmp`, `~`);
 - Niubash prepends its own WinuxCmd toolbelt to `PATH` (see [Known differences](#known-differences)).
 
@@ -81,16 +84,24 @@ Two prompt guidelines keep the two shells from competing:
 |---|---|
 | exit 0 | combined stdout+stderr; `structuredContent = { output, truncated, exit_code, wall_time_seconds }` |
 | non-zero exit | same payload with `isError: true` and `Command exited with code N` |
-| timeout | error result with the output captured so far and `Command timed out after N seconds` |
-| > 2000 lines or > 50KB | tail is kept, `details.truncation` / `details.fullOutputPath` are set |
-| cancelled | process tree is killed (`taskkill /F /T`), result says `Command aborted` |
-| `niu.exe` missing | error result naming every path that was checked |
+| timeout | error result with the output captured so far and `Command timed out after N seconds`; the kill is **asynchronous** |
+| > 2000 lines or > 50KB | tail is kept; `details.truncation` (`truncatedBy`, `lastLinePartial`, …) and `details.fullOutputPath` are set |
+| cancelled | `taskkill /F /T` is started but **not awaited**, so the tree dies best-effort; result says `Command aborted` |
+| `niu.exe` missing | error result naming every path that was checked; a path that exists but is **not a file** is reported separately |
+| `timeout` ≤ 0 | rejected by Pi (`Invalid timeout: must be a finite number of seconds`); use a positive number |
+
+The **model-facing** result is text truncated to 2000 lines / 50KB. A `codemode` script receives the
+`structuredContent` payload instead: `output` is capped at about **1MB**, split into a head and a tail
+with a `[... N bytes omitted ...]` marker, and `truncated` refers to that 1MB cap — not to the text
+truncation above. `full_output_path` is only present when the structured payload was capped. Scripts
+that must see less should slice `output` themselves.
 
 Output is always UTF-8: Niubash sets the code page to 65001 for itself and its children, so the
 CP936 console on a Chinese Windows install does not garble results (unlike the PowerShell tool,
 which needs a `[Console]::OutputEncoding` prefix).
 
-The tool is also callable from `codemode` scripts, where it resolves to the structured object:
+The tool is also callable from `codemode` scripts, where it resolves to the structured object (about
+1MB of head+tail output, see [Behavior](#behavior)):
 
 ```js
 const r = await tools.niubash({ command: "git status --porcelain" });
@@ -118,7 +129,9 @@ the build you expected:
 |---|---|---|
 | `git` | **niugit 2.56.0** (`winuxcmd\usr\bin\git.exe`) | shares your global `.gitconfig`; commits are readable by stock Git |
 | `rg` | **ripgrep 15.2.0** (`winuxcmd`) | same version and revision as the copy Pi manages |
-| `ls`, `find`, `grep`, `sed`, `awk`, `tar` | **WinuxCmd 1.2.1** applets | GNU-compatible implementations, not the Windows tools |
+| `ls`, `find`, `grep`, `awk` | **WinuxCmd 1.2.1** applets | GNU-compatible implementations, not the Windows tools |
+| `sed` | WinuxCmd 1.2.1 via a shell emulation | `type sed` reports the emulation, `type -a sed` the `winuxcmd` binary |
+| `tar` | **Windows' bsdtar** (`C:\Windows\System32\tar.exe`) | not a WinuxCmd applet; this host ships bsdtar 3.8.9 |
 
 Need the stock binary? Use the full path, e.g. `"/c/Program Files/Git/cmd/git.exe" status`.
 Nothing outside the shell changes: Pi's `grep` and `find` tools spawn their own managed
@@ -129,6 +142,9 @@ Other deliberate limits:
 - `niu -c` loads **no** rc and **no** plugins. Use `NIU_ENV=<file>` (or `BASH_ENV`) when a command
   needs an initialization file.
 - No PTY emulation; interactive fullscreen programs are out of scope.
+- A single command is limited to about **32K characters** by the Windows command line. The
+  `--ec`/`--encoded-command` mode removes quoting problems but does **not** lift the argv limit;
+  write long scripts to a file and run that file.
 - `/tmp` is the real Windows temp directory — the same place Pi writes truncated command output, so
   `cat`-ing `details.fullOutputPath` works from inside the shell.
 
@@ -150,7 +166,7 @@ The model loads it on demand; `/skill:niubash` forces it.
 
 | Variable | Purpose |
 |---|---|
-| `PI_NIUBASH_PATH` | absolute path to `niu.exe`; authoritative when set (a stale value is reported, not silently ignored) |
+| `PI_NIUBASH_PATH` | absolute path to the **`niu.exe` file**; authoritative when set (a stale value is reported, not silently ignored). A directory or other non-file path is rejected with an explicit "exists but is not a file" message |
 
 Resolution order when the variable is unset: `PATH` → `%LOCALAPPDATA%\Programs\Niubash\niu.exe`
 → `%ProgramFiles%\Niubash\niu.exe`. The lookup happens once at extension load; restart Pi after
@@ -161,10 +177,13 @@ installing or moving Niubash.
 | Symptom | Fix |
 |---|---|
 | `niubash` does not appear in the tool list | add it to `defaultTools` and start a new session; run `pi list` to confirm the package is installed |
-| `Niubash (niu.exe) was not found` | install Niubash, or point `PI_NIUBASH_PATH` at `niu.exe`, then restart |
+| Need to verify that the tool is exposed | use a `session_start` probe extension that records `getAllTools()` / `getActiveTools()` and exits; **do not** use `pi --print --tools <list>` — the allowlist intermittently resolves to zero tools in Pi 1.5.2, and a nested `pi` can hang after the model reply |
+| `Niubash (niu.exe) was not found` | install Niubash, or point `PI_NIUBASH_PATH` at the `niu.exe` file (not its directory), then restart |
+| `PI_NIUBASH_PATH points at a path that is not a file` | fix the path; it must name `niu.exe` itself |
 | Chinese output garbled | should not happen (Niubash forces UTF-8); if it does, capture the command and report it |
 | `git` behaves unexpectedly | you are running niugit; call the stock binary by full path |
-| Command hangs | no timeout is applied by default — retry with `timeout` |
+| Command hangs | no timeout is applied by default — retry with `timeout` (greater than 0) |
+| `Command line too long` | split the command, or write the script to a file and run the file |
 | Tool ran with the wrong cwd | the working directory comes from the session; check with `pwd` |
 
 ## Development
@@ -172,7 +191,8 @@ installing or moving Niubash.
 ```bash
 npm test           # unit tests: path resolution + prompt invariants (no Niubash needed)
 npm run test:smoke # end-to-end against the real niu.exe + a Pi SDK
-npm run typecheck  # after `npm install`
+npm install --include=dev   # needed before typechecking; a local `npm config omit=dev` skips tsc
+npm run typecheck  # never `npx tsc`: it can fetch the unrelated `tsc` package and exit 0
 ```
 
 `test:smoke` needs a resolvable Pi SDK; it looks at `PI_CODING_AGENT_SDK`, then a bare import, then
@@ -187,6 +207,7 @@ src/niu.ts          pure niu.exe resolution (env → PATH → known install dirs
 src/prompt.ts       tool name, description, prompt snippet/guidelines, error texts
 skill/              Pi skill + bundled references
 docs/DESIGN.md      design notes, verified host facts, acceptance checklist
+docs/ACCEPTANCE-METHOD.md  how to verify a Pi package (probes, budgets, residue checks)
 test/               unit tests and the opt-in smoke test
 ```
 

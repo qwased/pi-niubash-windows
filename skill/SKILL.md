@@ -4,10 +4,11 @@ description: >-
   Deep contract for the Niubash shell when driving it through Pi's `niubash` tool on Windows.
   Use for the path-dialect rules and the MSYS contrast, the rc/plugin loading contract, installing
   missing Unix commands with wpm, the niu debugger and base64 verbatim handoff, and documented
-  engine behaviour. 中文触发：路径契约与 MSYS 对照、niubashrc 与插件清单、wpm 安装缺失命令、
-  niu 调试器 / 逐字 handoff、Niubash 引擎已知行为。Do not load this for ordinary command
-  execution — the `niubash` tool description already covers calling semantics, truncation,
-  exit codes, timeouts and the niubash-vs-powershell split.
+  engine behaviour. Also triggered by Chinese-language requests about the path contract and the
+  MSYS contrast, niubashrc and the plugin manifest, installing missing commands with wpm, the niu
+  debugger / verbatim handoff, and documented Niubash engine behaviour. Do not load this for
+  ordinary command execution — the `niubash` tool description already covers calling semantics,
+  truncation, exit codes, timeouts and the niubash-vs-powershell split.
 compatibility: >-
   Written for Niubash 1.5.0 with pi-niubash-windows 0.1.x. Path and plugin rules were checked
   against the bundled references/ snapshot; re-verify host facts with `niu doctor` before trusting
@@ -37,7 +38,14 @@ conventions (one call = one command, truncation, exit codes, timeouts, shell cho
   (`/tmp`), and the result reports that path. `cat` it from inside the shell when you need the part
   that was truncated.
 - From a `codemode` script, `await tools.niubash({ command })` returns the structured result
-  (`output`, `exit_code`, `wall_time_seconds`) instead of text.
+  (`output`, `truncated`, `exit_code`, `wall_time_seconds`) instead of text. `output` is a head+tail
+  slice of about 1MB with an omission marker; `truncated` means that 1MB cap, not the 2000-line /
+  50KB text truncation. Slice `output` yourself when a script only needs a summary.
+- A single command is limited by the Windows command line (about 32K characters). `--ec` fixes
+  quoting, not length: write longer scripts to a file and run the file.
+- `ls`, `find`, `grep`, `awk` resolve to WinuxCmd applets and `sed` to its shell emulation; `tar`
+  is Windows' bsdtar in `C:\Windows\System32`, not a WinuxCmd applet. Call the stock binary by full
+  path when the difference matters.
 - PowerShell-native work (.NET/COM, registry, services, CIM/WMI, remoting) goes to the `powershell`
   tool, not to a wrapped `powershell -Command`.
 
@@ -118,7 +126,8 @@ Manifest, loader, and external-source contract: `references/prompt-plugins.md`.
 | `niu --dap <script>` | same session over the Debug Adapter Protocol on stdio |
 
 Use `--ec` when a host cannot safely quote a command line (this Pi tool passes argv directly and
-does not need it, but the mode is available for scripts and wrappers).
+does not need it, but the mode is available for scripts and wrappers). It does not change the
+Windows ~32K argv limit.
 
 Verb and plugin tables: `references/quickref.md`.
 
