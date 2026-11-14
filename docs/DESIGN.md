@@ -1,10 +1,10 @@
 # pi-niubash-windows — 设计文档
 
-- 状态：**已安装并验收**（P1–P5 完成；P5 安装于 2026-11-14 19:28；二轮复核见 [`REVIEW-R2.md`](./REVIEW-R2.md)，验收方法见 [`ACCEPTANCE-METHOD.md`](./ACCEPTANCE-METHOD.md)）
-- 仓库：`<repo>`
+- 状态：**已安装并验收**（P1–P5 完成；P5 安装于 2026-11-14 19:28；二轮复核与验收方法分别见仓库内的 `docs/REVIEW-R2.md`、`docs/ACCEPTANCE-METHOD.md`，这两份文件不随 npm 包发布）
+- 仓库：本仓库（本地检出；不记录本机绝对路径）
 - 目标宿主：Pi coding agent `@earendil-works/pi-coding-agent` **1.5.2**（本机经 `pi-web` 0.16.0 运行）
-- 目标 shell：Niubash **1.5.0**，`%USERPROFILE%\AppData\Local\Programs\Niubash\niu.exe`
-- 上游资料：`<workdir>\niubash\`（SKILL.md 原始版 + `references/`，本仓库 `skill/` 为其 Pi 语境重写版）
+- 目标 shell：Niubash **1.5.0**（本机复核时由 `PATH` 解析到 `niu.exe`；安装路径随主机不同）
+- 上游资料：Niubash 发布包中的 skill bundle（`SKILL.md` 原始版 + `references/`）；本仓库 `skill/` 为其 Pi 语境重写版
 
 面向使用者的安装/用法说明见 [`README.md`](../README.md)；本文记录**为什么这样做**、已验证的宿主事实、冲突分析与验收口径。
 
@@ -31,7 +31,7 @@
 | 事实 | 证据 |
 |---|---|
 | `niu -c` 从 Node `spawn` 逐字传 argv | 引号 `a"b`、结尾反斜杠 `C:\dir\`、多行、heredoc、CJK 全部逐字正确 |
-| 输出恒为 UTF-8 | 父控制台 CP 为 936 或 65001 时，niu 内 `chcp` 均报 `65001`，CJK 输出字节均为合法 UTF-8 |
+| 输出编码 | Niubash 为自身与子进程设置 UTF-8 代码页（65001）；常规文本与 CJK 输出已验证。Pi 按 UTF-8 解码捕获字节，非法原始字节会被替换为 U+FFFD，因此不应用作文本通道传二进制 |
 | 退出码透传 | `exit 3`→3、`false`→1、命令未找到→127 |
 | 流式输出 | `echo a; sleep 0.4; echo b` 两段分别到达，可驱动 `onUpdate` |
 | 单次开销 | 65–100 ms |
@@ -61,11 +61,15 @@
 3. **降级**：加载期只做一次 `statSync().isFile()` 探测（不启动后台资源、不跑 `niu doctor`）。
    - 找到且是文件 → 正常注册。
    - 未找到 → 仍注册 `niubash`（同一 schema），`execute` 抛可操作错误并列出所有探测路径；会话启动时若该工具已启用，`ui.notify` 一次。
-   - 路径存在但**不是文件**（如 `PI_NIUBASH_PATH=C:\Windows`）按“未找到”处理，错误单独列出 “exists but is not a file”。
+   - 路径存在但**不是文件**（如 `PI_NIUBASH_PATH=C:\Windows`）按“未找到”处理，错误列表逐个标注 `(not a file: a directory or another special file)`。
    - 解析顺序：`PI_NIUBASH_PATH`（权威，指向不存在/非文件则报错而非静默回退）→ `PATH` → `%LOCALAPPDATA%\Programs\Niubash\niu.exe` → `%ProgramFiles%\Niubash\niu.exe`。
+   - `statSync` 失败但 `access(F_OK)` 成功（Windows Store alias / ACL 特例）返回 `verified:false` 候选，由 spawn 裁决；真实目录仍因 `statSync` 报 `isDirectory` 而被拒绝。单一测试 seam 为 `kindOf`，不再使用“存在即文件”的 `exists` 注入。
+   - 降级信息保留每个候选的 `source` 与 `kind`：stub 错误与 `session_start` 通知都按来源解释，PATH 派生的非文件不会归因到 `PI_NIUBASH_PATH`；同一路径只列一次。未展开的 `%VAR%` 给出专门提示（不新增变量展开）。
    - 降级 stub 使用独立的 `UNAVAILABLE_DESCRIPTION` / `UNAVAILABLE_SNIPPET` / `UNAVAILABLE_GUIDELINES`，不得复用“优先 niubash / 在 powershell 之前”的规则（两条互斥指令会同时进入 `<rules>`）。
    - 非 Windows 平台由 `isSupportedPlatform()` 直接跳过：不注册工具、不注入规则（Niubash 在 Linux/macOS 上是 `niu`，不是 `niu.exe`）。
 4. **零环境副作用**：不调 `pi.setActiveTools`、不改进程 env、不动 `getShellEnv()`；`powershell` 工具与 `codemode` 行为不变。
+5. **启动错误边界**：spawn 指引只包在 `operations.exec` 边界，仅覆盖 `getShellConfig`/`spawn` 启动失败（含 `Custom shell path not found`、`ENOENT`/`EACCES`、`EFTYPE`、`ENAMETOOLONG`/`E2BIG`）；timeout、abort、cwd、`timeout<=0` 与输出临时文件 `open`/`read` 错误保持原文，替换错误保留原 `code` 与 `cause`。
+6. **pi-web subagent**：入口文件命名为 `src/niubash.ts`，使 pi-web 的稳定 basename selector `ext:niubash` 可用；插件仍 `defaultActive:false`，不自动改写用户 profile、不调用 `setActiveTools`。
 
 模块划分（便于无 SDK 单测）：
 
@@ -74,7 +78,7 @@
 | `src/niu.ts` | 纯路径解析（可注入 `env` / `exists` / `platform`） | `node:fs`、`node:path` |
 | `src/prompt.ts` | 工具名、description、snippet、guidelines、错误文案、截断常量 | 无 |
 | `src/tool.ts` | 把 SDK 的 shell 管道包装成 `niubash` 定义；不可用时的 stub | 仅 `import type` |
-| `src/index.ts` | 扩展入口：解析 → 注册 → 提示 | SDK + 上述模块 |
+| `src/niubash.ts` | 扩展入口：解析 → 注册 → 提示 | SDK + 上述模块 |
 
 ---
 
@@ -90,7 +94,7 @@
 
 ### 4.2 `description`（实际正文见 `src/prompt.ts`）
 
-必须包含：Niubash 身份（bash 5.3 方言、无 WSL/MSYS/Cygwin/POSIX/PTY）、`niu -c` 语义（不加载 rc/插件）、2000 行/50KB 截断与临时文件、退出码、无默认超时且 `timeout` 必须 > 0、命令行约 32K 上限、路径契约要点、winuxcmd 前置、无 PTY。**不写死** niugit/ripgrep 版本号：随 Niubash 升级漂移，精确版本只留在本文/README 的“验证于”段落。
+必须包含：Niubash 身份（GNU bash 方言、无 WSL/MSYS/Cygwin/POSIX/PTY）、每次调用都是新的 `niu -c` 进程（`cd`/`export`/函数不跨调用保留，不加载 rc/插件）、2000 行/50KB 截断与临时文件、退出码、无默认超时且 `timeout` 必须 > 0、命令行约 32K 上限、路径契约要点与 `pwd` 方言、winuxcmd 前置（`tar` 为系统 bsdtar）、无 PTY。**不写任何版本号**（连两段式 `bash 5.3` 也不写）：随 Niubash 升级漂移，精确版本只留在本文/README 的“验证于”段落。
 
 ### 4.3 `promptSnippet` / `promptGuidelines`
 
@@ -110,8 +114,10 @@
 | 正常退出 0 | `content` 文本；`structuredContent = { output, truncated, exit_code, wall_time_seconds }` |
 | 非 0 退出 | 同上 + `isError: true`，尾部 `Command exited with code N` |
 | 超时 | 抛错，含已捕获输出 + `Command timed out after N seconds`；`taskkill` 异步（只发不等待），进程树需轮询确认 |
-| 超 2000 行 / 50KB | 保留尾部 + `[Showing lines X-Y of Z … Full output: <temp>]`（50KB 路径为 `[Showing last 50.0KB of line N …]`），`details.truncation`（含 `truncatedBy` / `lastLinePartial`）/ `details.fullOutputPath` |
-| `niu` 缺失 | `isError: true`，列出探测路径 + 安装指引；目录/非文件单独列为 “exists but is not a file” |
+| 超 2000 行 | 保留尾部 + `[Showing lines X-Y of Z …]`，`truncatedBy: "lines"`、`lastLinePartial: false` |
+| 多行合计超 50KB | 保留整行直到字节上限 + `[Showing lines X-Y of Z (50.0KB limit) …]`，`truncatedBy: "bytes"`、`lastLinePartial: false` |
+| 单行超 50KB | 保留该行尾部 + `[Showing last 50.0KB of line N (line is …) …]`，`lastLinePartial: true` |
+| `niu` 缺失 | `isError: true`，列出探测路径并逐个标注 `(not found)` / `(not a file: a directory or another special file)`；按来源解释，不无条件归因或断言未安装 |
 | `timeout` ≤ 0 | Pi 拒绝：`Invalid timeout: must be a finite number of seconds`（0 是有限数，措辞来自上游） |
 | 命令行过长 | 包装为 `Command line too long … about 32K characters`，附“写入文件再执行”的出路 |
 | 取消（signal） | 进程树 `taskkill /F /T`（同样 **best-effort**），返回 `Command aborted` |
@@ -179,13 +185,13 @@ pi-niubash-windows/
 ├─ package.json                 # pi.extensions / pi.skills / files / peerDependencies
 ├─ tsconfig.json                # noEmit + erasableSyntaxOnly（配合 Node 类型剥离）
 ├─ src/
-│  ├─ index.ts                  # 扩展入口（平台闸门 + 注册）
+│  ├─ niubash.ts                # 扩展入口（平台闸门 + 注册）
 │  ├─ tool.ts                   # shell 管道包装 + spawn 错误指引
 │  ├─ niu.ts                    # 纯路径解析 + isSupportedPlatform
 │  └─ prompt.ts                 # 名称/描述/guidelines/文案
 ├─ skill/
 │  ├─ SKILL.md                  # Pi 语境重写版（英文）
-│  └─ references/               # 4 篇上游文档 + ATTRIBUTION.md
+│  └─ references/               # 4 篇上游文档 + ATTRIBUTION.md + 上游 MIT LICENSE 正文
 ├─ docs/
 │  ├─ DESIGN.md                 # 本文
 │  ├─ ACCEPTANCE-METHOD.md      # 验收方法：探针、预算、残留检查
@@ -201,21 +207,24 @@ pi-niubash-windows/
 ```json
 {
   "type": "module",
-  "pi": { "extensions": ["./src/index.ts"], "skills": ["./skill"] },
+  "pi": { "extensions": ["./src/niubash.ts"], "skills": ["./skill"] },
   "files": ["src", "skill", "docs/DESIGN.md", "README.md", "CHANGELOG.md", "LICENSE"],
-  "peerDependencies": { "@earendil-works/pi-coding-agent": ">=1.5.0" }
+  "engines": { "node": ">=22.19.0" },
+  "peerDependencies": { "@earendil-works/pi-coding-agent": "*" }
 }
 ```
 
+> **peerDependencies 决策**：按 Pi `docs/packages.md`（host-provided packages 用 `"*"`，且不随包捆绑）：Pi 对托管 npm/git 包会抑制自动 peer 安装，范围写死不会改变安装行为；真实 API 下限由本仓库 devDependency `^1.5.2` 与 smoke 验证表达，而不是包管理器范围。`engines.node` 对齐当前 SDK 的 `>=22.19.0`。
+
 > `files` 只发布 DESIGN.md；`ACCEPTANCE.md` / `REVIEW-R2.md` / `ACCEPTANCE-METHOD.md` 是仓库内的验收证据，不进入 npm 包。
 
-> 选包内 `skills` 而非复制到 `~/.pi/agent/skills/`：单一源码位置，`pi install` 一次即同时交付工具与 skill。原始 `<workdir>\niubash\SKILL.md` 保留不动，便于与上游 diff。
+> 选包内 `skills` 而非复制到 `~/.pi/agent/skills/`：单一源码位置，`pi install` 一次即同时交付工具与 skill。上游 skill bundle 保留不动，便于与 `skill/references/` 快照 diff。
 
 ### 6.2 settings 变更（共两处，先备份）
 
 ```jsonc
 {
-  "packages": [ ..., "<repo>" ],
+  "packages": [ ..., "./pi-niubash-windows" ],
   "defaultTools": [ "read", "powershell", "niubash", "edit", "write", "codemode", "grep", "find", "ls" ]
 }
 ```
@@ -229,36 +238,26 @@ pi-niubash-windows/
 
 ---
 
-## 7. Skill 重写（已完成）
+## 7. Skill（R3 后重写）
 
-原则：**工具描述负责"怎么调用、什么时候用、输出/超时/截断语义"；`SKILL.md` 只负责"深水区契约"**。
+原则：**工具描述负责常驻契约**（每次新进程与状态重置、截断、退出码、超时、32K、shell 选择、路径高频要点）；`SKILL.md` 只负责按需的深水区与症状路由，正文约 3.5–5KB。
 
-### 7.1 删除（与工具描述重合）
+### 7.1 主 Skill 的职责
 
-- 输出截断 / 退出码 / 超时 / 无默认超时
-- `niu` vs `cmd` vs `powershell` 选择表
-- "当前会话就是 Niubash，直接跑命令"式前置说明
-- 能力快照与内置命令长表（压缩为一句 + 指向 `references/quickref.md`）
+- “何时加载”的英文症状触发：路径看起来不对、`pwd` 显示 `/c/…`、命令缺失、rc/plugin、wpm、DAP。
+- 工具内行为差异：一次调用一个 `niu -c` 进程；不要为了回到 bash 语义而嵌套（`cmd`/WSL 仅用于各自原生语义）；`--ec` 不解决 32K；codemode 的 1MB 结构化 payload 与文本截断不同。
+- `pwd`/`$PWD` 输出 `/c/…` 方言、native child 收 `C:\…`，不能拿输入字符串直接等值比较。
+- 无 PTY：不要在本工具内启动交互式 `niu --debug`；用真实 niu TTY 或 DAP client。
+- 每个症状先给现场验证命令，再指向 references；references 是离线 fallback，不删除。
+- provenance/update 流程指向 `references/ATTRIBUTION.md`。
 
-### 7.2 保留（工具描述放不下）
+### 7.2 有意不重复的内容
 
-- 身份与边界：无 POSIX 层、无 `cygwin1.dll`/`msys-2.0.dll`、无 fork/POSIX 信号、无 PTY
-- 路径契约细表与 MSYS 对照（`/c/…`、`/mnt/c/…`、`/usr/bin`、`/tmp`、`D:`、`~`），数据形 token 与裸 `/` 不翻译
-- 启动流：`~/.niubash/generated/plugins.niu` 先于 `~/.niubashrc`；`-c`/脚本不加载 rc 与插件；`NIU_ENV` / `BASH_ENV`
-- `NIU_SHELL` / `SHELL` 语义
-- `wpm` 安装缺失命令、`niu doctor`、`wpm links list`
-- 调试器：`niu --debug`（`(niu-dbg)`）、`niu --dap`、`editors/vscode/`
-- 逐字 handoff：`--encoded-command` / `--ec`（`v1:` 前缀）、`niu -C`、`--cwd-state`
-- 引擎已知行为（负缓存失效、`unset` 真删除、CJK 重绘、私有区字符）
+调用参数、退出码、文本截断、默认超时、32K 上限、niubash-vs-powershell 分工只在工具描述里；Skill 只补描述放不下的差异。README 不再声称 Skill “不重复 description”——它只承诺“不重复常驻契约”。
 
-### 7.3 新增（Pi 语境）
+### 7.3 references
 
-- 一次工具调用 = 一次 `niu -c`；不要嵌套 `niu`/`bash`
-- `-c` 不加载 rc/插件 → 需要时显式 `source` 或 `NIU_ENV`
-- 读文件/搜索优先用内置 `read`/`grep`/`find`/`ls`
-- 大输出的 `pi-bash-*.log` 在 `/tmp`，可直接 `cat`
-- codemode 里 `tools.niubash(...)` 拿结构化结果
-- PowerShell 原生能力用 `powershell` 工具，不在 niubash 里绕 `powershell -Command`
+保留逐字上游快照：`paths.md`、`prompt-plugins.md`、`quickref.md`、`wpm.md`，外加 `ATTRIBUTION.md` 与上游 MIT 正文。现场可查时优先 `command -v`、`niu doctor`、`help -s '*'`、`wpm installed`；快照用于离线复核与 provenance。
 
 ---
 
@@ -303,13 +302,13 @@ pi-niubash-windows/
 
 **E. 边界与降级（第二轮补）**
 
-14. `PI_NIUBASH_PATH` 三态：有效文件 → 正常；失效路径 → 未找到并列出；目录/非文件 → `notFile` 且错误含 “exists but is not a file”
+14. `PI_NIUBASH_PATH` 三态：有效文件 → 正常；失效路径 → 未找到并列出；目录/非文件 → `kind: "other"` 且错误含 “not a file: a directory or another special file”；Store alias/ACL 特例为 `verified:false` 候选
 15. 降级 stub：`description` / `snippet` / `guidelines` 一致（不得出现“优先 niubash / 在 powershell 之前”），`session_start` 有警告；非 Windows 平台不注册
 16. 截断三边界：2000 行（`truncatedBy=lines`）、50KB（`truncatedBy=bytes`）、单行超限（`lastLinePartial=true` + `[Showing last 50.0KB …]`）
 17. structured 1MB：`tools.niubash` 的 `output` 约 1MB、含 `[... N bytes omitted ...]`、`truncated:true` 且 `full_output_path` 存在
 18. 取消（`AbortSignal`）：返回 `Command aborted`、保留已捕获输出、`taskkill` 异步需轮询确认
 19. 命令行上限：40K 命令 → `Command line too long … about 32K characters`，不得只抛 `spawn ENAMETOOLONG`
-20. 版本漂移：`DESCRIPTION` / `PROMPT_GUIDELINES` 不含 `x.y.z` 形式的硬编码版本
+20. 版本漂移：`DESCRIPTION` / `PROMPT_GUIDELINES` 不含 `x.y.z` 或 `x.y` 形式的硬编码版本
 
 ---
 
@@ -327,7 +326,7 @@ pi-niubash-windows/
 | 与 `powershell` 误用 | 模型选错 shell | guidelines 1/2 明确分工 |
 | `tar` 归属误判 | 文档把系统 bsdtar 当成 WinuxCmd applet | README/DESIGN/SKILL 分开列出；不再写“全是 WinuxCmd” |
 | Windows 命令行上限（约 32K） | 长命令 `spawn ENAMETOOLONG` | `execute` 包装为可操作错误；DESCRIPTION/README/SKILL 同时说明；`--ec` 不解决 argv 长度 |
-| 模型可见文本写死版本号 | Niubash 升级后提示长期说错版本 | description/guidelines 只做定性描述；精确版本留在“验证于”段落 |
+| 模型可见文本写死版本号 | Niubash 升级后提示长期说错版本 | description/guidelines 完全 version-free（含两段式）；精确版本留在“验证于”段落 |
 | 非 Windows 平台安装 | stub + “优先 niubash”规则污染其他平台 | `isSupportedPlatform()` 直接不注册；README 说明 Windows-only |
 | 扩展注册与 `--tools` 解析的竞态 | `pi --print --tools <含扩展工具>` 偶发 0 工具（Pi 1.5.2，未定因） | 禁止用 `--tools` 做暴露门禁；改用 `session_start` 探针（见 ACCEPTANCE-METHOD） |
 

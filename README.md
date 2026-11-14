@@ -19,7 +19,7 @@ for Windows — and keeps Pi's built-in PowerShell tool untouched next to it.
 | Pi | `@earendil-works/pi-coding-agent` ≥ 1.5 |
 | Niubash | 1.5.0 or later (`niu.exe`, MIT, <https://unixwin.dev>) |
 | OS | Windows 10 / 11 (the extension is inert on other platforms: it registers no tool and adds no prompt rules) |
-| Node (dev only) | ≥ 22.18 for running the TypeScript sources directly in tests |
+| Node (tests and local development) | ≥ 22.19 (the Pi SDK requires it) |
 
 `niu.exe` is resolved at extension load. If it is missing, the tool is still registered but every
 call returns an actionable error instead of failing silently.
@@ -30,8 +30,8 @@ call returns an actionable error instead of failing silently.
 # once published
 pi install npm:pi-niubash-windows
 
-# from a git clone
-pi install git:github.com/<you>/pi-niubash-windows
+# from a git clone (the public repository URL is not published yet; substitute the real one)
+pi install git:github.com/<owner>/pi-niubash-windows
 
 # local checkout (what this repository is developed as)
 pi install ./pi-niubash-windows
@@ -41,6 +41,8 @@ Then enable the tool in `~/.pi/agent/settings.json` and start a **new** Pi sessi
 
 ```jsonc
 {
+  // `defaultTools` is an exact list (replace semantics), not a merge.
+  // Append "niubash" to the list you already have; do not drop your other tools.
   "defaultTools": ["read", "powershell", "niubash", "edit", "write", "codemode", "grep", "find", "ls"]
 }
 ```
@@ -48,6 +50,26 @@ Then enable the tool in `~/.pi/agent/settings.json` and start a **new** Pi sessi
 `pi install` writes the package entry to `settings.packages`. The extension registers `niubash`
 as **inactive** (`defaultActive: false`), so a settings opt-in is what turns it on — deleting the
 name again is the whole rollback.
+
+### pi-web subagents
+
+pi-web gives a subagent its own tool-selection domain. Its plain `tools:` list only accepts the
+built-in names, so `niubash` has to be selected with the extension selector `ext:niubash` — the
+basename of the extension entry file (`src/niubash.ts`):
+
+```yaml
+# ~/.pi/agent/agents/<profile>.md, keep load_extensions: true
+tools: read, bash, edit, write, grep, find, ls, ext:niubash
+```
+
+`defaultActive: false` is unchanged: the selector activates the extension's tools for that
+subagent only, and the extension never rewrites a profile or calls `setActiveTools`. The Agent
+list may not show extension tools; verify in the child session (`resourceSnapshot.tools`,
+`toolsAdded`, or a real call), not in the parent's Agent description.
+
+> `ext:` selectors refer to the extension **basename**: `ext:niubash`, not the package name.
+> A package whose entry is `src/index.ts` cannot be selected this way; this repository keeps
+> `src/niubash.ts` for exactly that reason.
 
 ## What the model sees
 
@@ -58,8 +80,12 @@ name again is the whole rollback.
 
 The tool description tells the model that:
 
-- each call is one `niu -c <command>` in the session working directory, so `~/.niubashrc` and
-  plugins do not load;
+- each call is a **new** `niu -c <command>` process in the session working directory, so `cd`,
+  `export`, shell functions and other shell state do **not** persist between calls, and
+  `~/.niubashrc` / plugins do not load;
+- `pwd`/`$PWD` print the POSIX-style `/c/...` spelling, while native children receive `C:\...`;
+  compare resolved paths (for example with `test` or `/usr/bin/pwd`) instead of comparing a path
+  with the command input string;
 - output is truncated to the **last 2000 lines or 50KB**, full output goes to a temp file whose path
   is reported;
 - exit codes propagate and a non-zero exit is an error result;
@@ -85,9 +111,11 @@ Two prompt guidelines keep the two shells from competing:
 | exit 0 | combined stdout+stderr; `structuredContent = { output, truncated, exit_code, wall_time_seconds }` |
 | non-zero exit | same payload with `isError: true` and `Command exited with code N` |
 | timeout | error result with the output captured so far and `Command timed out after N seconds`; the kill is **asynchronous** |
-| > 2000 lines or > 50KB | tail is kept; `details.truncation` (`truncatedBy`, `lastLinePartial`, …) and `details.fullOutputPath` are set |
+| > 2000 lines | tail kept; `truncatedBy: "lines"`, `lastLinePartial: false`, `[Showing lines X-Y of Z …]` |
+| > 50KB across many short lines | whole lines are kept up to the byte cap; `truncatedBy: "bytes"`, `lastLinePartial: false`, `[Showing lines X-Y of Z (50.0KB limit) …]` |
+| one line > 50KB | tail of that line; `truncatedBy: "bytes"`, `lastLinePartial: true`, `[Showing last 50.0KB of line N …]` |
 | cancelled | `taskkill /F /T` is started but **not awaited**, so the tree dies best-effort; result says `Command aborted` |
-| `niu.exe` missing | error result naming every path that was checked; a path that exists but is **not a file** is reported separately |
+| `niu.exe` missing | error result naming every path that was checked once, annotated with what was found there |
 | `timeout` ≤ 0 | rejected by Pi (`Invalid timeout: must be a finite number of seconds`); use a positive number |
 
 The **model-facing** result is text truncated to 2000 lines / 50KB. A `codemode` script receives the
@@ -96,9 +124,11 @@ with a `[... N bytes omitted ...]` marker, and `truncated` refers to that 1MB ca
 truncation above. `full_output_path` is only present when the structured payload was capped. Scripts
 that must see less should slice `output` themselves.
 
-Output is always UTF-8: Niubash sets the code page to 65001 for itself and its children, so the
-CP936 console on a Chinese Windows install does not garble results (unlike the PowerShell tool,
-which needs a `[Console]::OutputEncoding` prefix).
+Niubash sets the console code page to UTF-8 (65001) for itself and its children, so the CP936
+console on a Chinese Windows install does not garble results (unlike the PowerShell tool, which
+needs a `[Console]::OutputEncoding` prefix). Regular text and CJK output are verified. Pi decodes
+the captured bytes as UTF-8, so arbitrary invalid raw bytes are replaced with U+FFFD — do not use
+the text output channel to move binary data.
 
 The tool is also callable from `codemode` scripts, where it resolves to the structured object (about
 1MB of head+tail output, see [Behavior](#behavior)):
@@ -123,7 +153,8 @@ if (r.exit_code !== 0) throw new Error(r.output);
 
 Niubash prepends four `winuxcmd` directories to `PATH` for the processes it spawns. That is by
 design (it is how the Unix toolbelt ships) but it means "the command you asked for" is not always
-the build you expected:
+the build you expected. The versions below were read on this review host; they follow the
+installed Niubash release and are deliberately not part of the model-facing text:
 
 | Command | Inside `niubash` | Notes |
 |---|---|---|
@@ -150,23 +181,26 @@ Other deliberate limits:
 
 ## Bundled skill
 
-`skill/` ships a Pi-format skill that is installed by the package (`pi.skills`). It deliberately
-omits everything the tool description already covers (call syntax, truncation, exit codes, shell
-selection) and keeps the deep contract instead:
+`skill/` ships a Pi-format skill that is installed by the package (`pi.skills`). The tool
+description owns the calling contract (one process per call, truncation, exit codes, timeouts,
+shell choice); the skill is loaded on demand and routes symptoms into the deep contracts the
+description cannot carry:
 
-- path-dialect rules and the MSYS contrast (`references/paths.md`)
+- path dialect and the `pwd`/native-child mismatch (`references/paths.md`)
 - rc / plugin-manifest / generated-loader contract (`references/prompt-plugins.md`)
 - installing missing Unix commands with `wpm` (`references/wpm.md`)
 - command tables: launcher verbs, builtins, applets (`references/quickref.md`)
 - `niu --debug` / `--dap`, base64 verbatim handoff (`--ec`), `niu -C`, `--cwd-state`
 
-The model loads it on demand; `/skill:niubash` forces it.
+The `references/` files are verbatim upstream snapshots for offline verification. Prefer live
+checks (`command -v`, `niu doctor`, `help -s '*'`, `wpm installed`) when the host is available;
+the snapshot is the fallback. The model loads the skill on demand; `/skill:niubash` forces it.
 
 ## Configuration
 
 | Variable | Purpose |
 |---|---|
-| `PI_NIUBASH_PATH` | absolute path to the **`niu.exe` file**; authoritative when set (a stale value is reported, not silently ignored). A directory or other non-file path is rejected with an explicit "exists but is not a file" message |
+| `PI_NIUBASH_PATH` | absolute path to the **`niu.exe` file**; authoritative when set (a stale value is reported, not silently ignored). A directory or other non-file path is rejected with an explicit "not a file: a directory or another special file" message; a Windows Store alias that `statSync` cannot classify but `access` can reach is handed to `spawn` instead of being rejected |
 
 Resolution order when the variable is unset: `PATH` → `%LOCALAPPDATA%\Programs\Niubash\niu.exe`
 → `%ProgramFiles%\Niubash\niu.exe`. The lookup happens once at extension load; restart Pi after
@@ -179,8 +213,9 @@ installing or moving Niubash.
 | `niubash` does not appear in the tool list | add it to `defaultTools` and start a new session; run `pi list` to confirm the package is installed |
 | Need to verify that the tool is exposed | use a `session_start` probe extension that records `getAllTools()` / `getActiveTools()` and exits; **do not** use `pi --print --tools <list>` — the allowlist intermittently resolves to zero tools in Pi 1.5.2, and a nested `pi` can hang after the model reply |
 | `Niubash (niu.exe) was not found` | install Niubash, or point `PI_NIUBASH_PATH` at the `niu.exe` file (not its directory), then restart |
-| `PI_NIUBASH_PATH points at a path that is not a file` | fix the path; it must name `niu.exe` itself |
-| Chinese output garbled | should not happen (Niubash forces UTF-8); if it does, capture the command and report it |
+| `... which is not a niu.exe file` | fix `PI_NIUBASH_PATH`; it must name `niu.exe` itself |
+| `PI_NIUBASH_PATH still contains an unexpanded %NAME% reference` | Pi does not expand `%LOCALAPPDATA%`-style variables; write the literal path (a leading `~` is expanded) |
+| Chinese output garbled | should not happen (Niubash sets the console to UTF-8); if it does, capture the command and report it |
 | `git` behaves unexpectedly | you are running niugit; call the stock binary by full path |
 | Command hangs | no timeout is applied by default — retry with `timeout` (greater than 0) |
 | `Command line too long` | split the command, or write the script to a file and run the file |
@@ -196,12 +231,16 @@ npm run typecheck  # never `npx tsc`: it can fetch the unrelated `tsc` package a
 ```
 
 `test:smoke` needs a resolvable Pi SDK; it looks at `PI_CODING_AGENT_SDK`, then a bare import, then
-`npm root -g`. It skips (exit 0) when neither Niubash nor the SDK is available.
+`npm root -g`. An explicitly set `PI_CODING_AGENT_SDK` is authoritative: if it does not resolve,
+the run fails instead of silently using another copy. The smoke test skips (exit 0) when Niubash is
+absent; `SMOKE_REQUIRED=1` turns that skip into a failure, and `SMOKE_SUBSET=stub` runs only the
+checks that need no Niubash install (the CI job).
 
 Layout:
 
 ```text
-src/index.ts        extension entry: resolve niu, register the tool or the unavailable stub
+src/niubash.ts       extension entry: resolve niu, register the tool or the unavailable stub
+src/niubash.ts      extension entry: platform gate + resolve + register
 src/tool.ts         wraps Pi's shell pipeline into the `niubash` definition
 src/niu.ts          pure niu.exe resolution (env → PATH → known install dirs)
 src/prompt.ts       tool name, description, prompt snippet/guidelines, error texts
@@ -224,5 +263,8 @@ no `shellPath` override, no copies into `~/.pi/agent/extensions`.
 
 MIT — see [LICENSE](LICENSE).
 
-The bundled `skill/references/` documents are shipped verbatim from the Niubash 1.5.0 skill bundle
-(MIT, Copyright (c) 2026 unixwin team); see [skill/references/ATTRIBUTION.md](skill/references/ATTRIBUTION.md).
+The bundled `skill/references/` documents are shipped verbatim from the Niubash skill bundle
+(MIT, Copyright (c) 2026 unixwin team). The upstream license text is reproduced in
+[skill/references/LICENSE](skill/references/LICENSE); source URL, capture date, per-file SHA256
+and the unknown upstream commit are recorded in
+[skill/references/ATTRIBUTION.md](skill/references/ATTRIBUTION.md).
