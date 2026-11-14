@@ -319,7 +319,7 @@ pi-niubash-windows/
 | niugit/winuxcmd 抢占 `git`/`rg` | 模型误判工具版本 | description + guideline 3 + skill；全路径逃生舱；实测同 config、同 rg 版本 |
 | `createBashToolDefinition` 忽略 `shellPath` | 静默退回 Git Bash | 强制走 `operations: createLocalBashOperations({shellPath})`；smoke 断言 `command -v ls` 指向 winuxcmd |
 | 临时文件前缀固定 `pi-bash-` | 仅外观 | README 说明，不 fork 内部实现 |
-| `-c` 极端引号破例（未观测到） | 命令被错误解析 | 逃生舱：`--ec <base64>`（已实测可用） |
+| `-c` 极端引号破例（已观测，rubash#3511） | 管道成员的“双引号参数 + 命令替换 + 撇号”会把 `'` 变成 U+0017，argv 静默篡改；`--ec` 同样复现 | 上游已修（`0ef814fb`，2026-11-14）；等 Niubash bump `scripts/release/rubash-pin.json` 后发行；SKILL/README 记录触发面与“先赋值”绕法；smoke 的 known-issue 探针在修复后转严格断言 |
 | niu 未安装/被卸载 | 工具不可用 | 降级 stub + 安装指引；`PI_NIUBASH_PATH` 可覆盖 |
 | pi-web 不支持热重载 | 改动后不生效 | 以新开会话为准 |
 | 无 PTY | `ssh -t`/`vim`/`tmux` 失效 | description 明示，交给 pwsh/WSL |

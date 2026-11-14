@@ -4,6 +4,14 @@
   "description": "Niubash (native Windows bash) as a Pi tool, coexisting with Pi's PowerShell tool.",
   "license": "MIT",
   "author": "qwased",
+  "homepage": "https://github.com/qwased/pi-niubash-windows",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qwased/pi-niubash-windows.git"
+  },
+  "bugs": {
+    "url": "https://github.com/qwased/pi-niubash-windows/issues"
+  },
   "type": "module",
   "keywords": [
     "pi-package",

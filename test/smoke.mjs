@@ -289,11 +289,35 @@ await check("runs bash syntax with UTF-8 output", async () => {
   assert.ok(text.includes(process.cwd().split(/[\\/]/).pop()), "pwd must be the session working directory");
 });
 
-await check("passes quotes and a trailing backslash through argv", async () => {
-  const result = await run({ command: "printf '%s\\n' 'a\"b' 'C:\\dir\\'" });
+await check("passes quotes and a trailing backslash through a native child's argv", async () => {
+  // `printf` is a Niubash builtin: it proves the parser, not the spawn boundary. A native
+  // child's argv is the boundary a pipeline can corrupt (rubash#3511), so use node here.
+  const result = await run({
+    command: `node -e "process.stdout.write(process.argv.slice(1).join('|'))" 'a"b' 'C:\\dir\\'`,
+  });
   assert.equal(result.structuredContent.exit_code, 0);
-  const lines = result.content[0].text.trimEnd().split("\n");
-  assert.deepEqual(lines, ['a"b', "C:\\dir\\"]);
+  assert.equal(result.content[0].text.trim(), 'a"b|C:\\dir\\');
+});
+
+await check("keeps apostrophes in a piped native-child arg (known upstream rubash#3511)", async () => {
+  // Niubash 1.5.0 ships a rubash before 0ef814fb: a double-quoted word that mixes a live
+  // command substitution with an apostrophe reaches the pipeline child with U+0017 instead
+  // of `'`. The upstream fix is merged; this probe becomes a strict assertion once the
+  // pinned engine carries it (next Niubash release after 1.5.0).
+  const result = await run({
+    command: `node -e "process.stdout.write(JSON.stringify(process.argv.slice(1)))" "it's \`echo now\`" | cat`,
+  });
+  assert.equal(result.structuredContent.exit_code, 0);
+  const text = result.content[0].text.trim();
+  if (text === `["it's now"]`) return;
+  if (text === '["it\\u0017s now"]') {
+    console.log(
+      "     known upstream defect (rubash#3511): apostrophe degraded to U+0017; " +
+        "fix merged, pending the Niubash pin bump",
+    );
+    return;
+  }
+  assert.fail(`unexpected piped argv: ${text}`);
 });
 
 await check("isolates concurrent calls and exposes the Pi session id", async () => {

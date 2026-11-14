@@ -58,6 +58,10 @@ All notable changes to this project are documented here. The format follows
   aborts with a libuv assertion (0xC0000409) on Windows instead of exiting 1.
 - The extension is inert on non-Windows platforms instead of registering a permanent stub and its
   Windows-only shell rules.
+- The quote-fidelity smoke check now goes through a native child's argv instead of the `printf`
+  builtin, and a new probe records the Niubash 1.5.0 pipeline argv-carrier defect (rubash#3511:
+  `'` becomes U+0017). The probe turns into a strict assertion once the pinned engine carries
+  `0ef814fb`.
 
 ### Changed
 
@@ -88,3 +92,6 @@ All notable changes to this project are documented here. The format follows
   uses the `C:/...` spelling, `NIU_SHELL` the `C:\...` spelling.
 - `skill/references/LICENSE` is committed with LF line endings, matching the published tarball,
   and its SHA256 is recorded in `ATTRIBUTION.md`.
+- README, SKILL and DESIGN document the Niubash 1.5.0 pipeline argv defect (rubash#3511) and its
+  workaround (assign the substitution to a variable before the pipeline); `niu --ec` does not
+  avoid it.

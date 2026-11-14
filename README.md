@@ -24,14 +24,31 @@ for Windows — and keeps Pi's built-in PowerShell tool untouched next to it.
 `niu.exe` is resolved at extension load. If it is missing, the tool is still registered but every
 call returns an actionable error instead of failing silently.
 
+### Known upstream issue: Niubash 1.5.0 pipeline argv
+
+Niubash 1.5.0 ships a `rubash` engine from before
+[rubash#3511](https://github.com/unixwin/rubash/pull/3511). When a pipeline member has a
+double-quoted argument that mixes a live command substitution with an apostrophe, the child
+receives U+0017 instead of `'`:
+
+```bash
+node -e "process.stdout.write(process.argv[1])" "it's `echo now`" | cat   # it\x17s now
+x=$(echo now); node -e "process.stdout.write(process.argv[1])" "it's $x" | cat  # it's now
+```
+
+The fix is merged upstream and ships with the next Niubash release whose
+`scripts/release/rubash-pin.json` includes `0ef814fb`. Until then, compute the substitution into a
+variable before the pipeline. `niu --ec` does **not** avoid it. The smoke test records the defect as
+a known issue and asserts strictly once the engine is fixed.
+
 ## Install
 
 ```bash
 # once published
 pi install npm:pi-niubash-windows
 
-# from a git clone (the public repository URL is not published yet; substitute the real one)
-pi install git:github.com/<owner>/pi-niubash-windows
+# from a git clone
+pi install git:github.com/qwased/pi-niubash-windows
 
 # local checkout (what this repository is developed as)
 pi install ./pi-niubash-windows

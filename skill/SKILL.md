@@ -63,6 +63,15 @@ variable: there is no `MSYS_NO_PATHCONV`-equivalent. Full table: `references/pat
 Slice `output` in the script when only a summary is needed; `truncated` does not reflect the
 2000-line / 50KB rule.
 
+## Known upstream defects
+
+- Niubash 1.5.0 (rubash before `0ef814fb`) corrupts a pipeline member's argv: in a double-quoted
+  word that mixes a live command substitution with an apostrophe, the child receives U+0017
+  instead of `'`. Upstream fix: rubash#3511 (merged); it ships in the next Niubash release whose
+  `scripts/release/rubash-pin.json` includes `0ef814fb`. Workaround: compute the substitution into
+  a variable first, e.g. `x=$(date); cmd "it's $x" | cat`. `niu --ec` does not avoid it. Check the
+  pinned engine with `niu --version` (it prints the rubash rev).
+
 ## Symptom → verify → reference
 
 Run the live check first; use the bundled files when the host cannot answer.
