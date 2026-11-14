@@ -6,6 +6,7 @@ import {
   ENV_OVERRIDE,
   NIU_EXE,
   installDirectoryCandidates,
+  isSupportedPlatform,
   pathCandidates,
   resolveNiu,
 } from "../src/niu.ts";
@@ -18,6 +19,8 @@ import {
   TOOL_LABEL,
   TOOL_NAME,
   UNAVAILABLE_DESCRIPTION,
+  UNAVAILABLE_GUIDELINES,
+  UNAVAILABLE_SNIPPET,
   unavailableMessage,
 } from "../src/prompt.ts";
 
@@ -119,6 +122,42 @@ test("standard install directories are used after PATH", () => {
   assert.deepEqual(missing.checked, candidates.map((candidate) => candidate.path));
 });
 
+test("PI_NIUBASH_PATH pointing at a directory is reported as not a file", () => {
+  const directory = join("windows");
+  const resolution = resolveNiu({
+    env: { [ENV_OVERRIDE]: directory },
+    exists: () => true,
+    isFile: () => false,
+  });
+  assert.equal(resolution.found, false);
+  assert.deepEqual(resolution.checked, [directory]);
+  assert.deepEqual(resolution.notFile, [directory]);
+
+  const message = unavailableMessage(resolution.checked, resolution.notFile);
+  assert.match(message, /not files/);
+  assert.match(message, /PI_NIUBASH_PATH must point at niu\.exe itself/);
+});
+
+test("a directory on PATH is skipped instead of being registered as niu.exe", () => {
+  const directory = join("bin");
+  const toolbox = join("toolbox");
+  const resolution = resolveNiu({
+    env: { PATH: [directory, toolbox].join(delimiter) },
+    exists: () => true,
+    isFile: (path) => path === join(toolbox, NIU_EXE),
+    platform: "win32",
+  });
+  assert.equal(resolution.found, true);
+  assert.equal(resolution.path, join(toolbox, NIU_EXE));
+});
+
+test("only Windows is supported", () => {
+  assert.equal(isSupportedPlatform("win32"), true);
+  for (const platform of ["linux", "darwin", "freebsd", "aix"]) {
+    assert.equal(isSupportedPlatform(platform), false, platform);
+  }
+});
+
 test("nothing found yields an empty or useful checked list", () => {
   const resolution = resolveNiu({ env: { PATH: "" }, exists: () => false });
   assert.equal(resolution.found, false);
@@ -161,12 +200,31 @@ test("every guideline names the tool and the shell split is explicit", () => {
 test("the unavailable stub is actionable", () => {
   assert.ok(UNAVAILABLE_DESCRIPTION.length <= 400);
   assert.match(UNAVAILABLE_DESCRIPTION, /powershell/);
+  assert.match(UNAVAILABLE_SNIPPET, /unavailable/i);
+  assert.doesNotMatch(UNAVAILABLE_SNIPPET, /Run bash-syntax commands/);
 
   const message = unavailableMessage(["C:\\a\\niu.exe", "C:\\b\\niu.exe"]);
   assert.ok(message.includes(ENV_OVERRIDE));
   assert.ok(message.includes("https://unixwin.dev"));
   assert.match(message, /C:\\a\\niu\.exe/);
   assert.match(message, /C:\\b\\niu\.exe/);
+});
+
+test("the unavailable stub does not inject conflicting shell-selection rules", () => {
+  const rules = UNAVAILABLE_GUIDELINES.join(" ");
+  assert.match(rules, /powershell/);
+  assert.doesNotMatch(rules, /before the powershell tool/);
+  assert.doesNotMatch(rules, /as the default shell/);
+  for (const guideline of UNAVAILABLE_GUIDELINES) {
+    assert.match(guideline, /niubash/i, `guideline must name the tool: ${guideline}`);
+  }
+});
+
+test("model-facing text does not pin bundled tool versions", () => {
+  const modelText = [DESCRIPTION, ...PROMPT_GUIDELINES, ...UNAVAILABLE_GUIDELINES, UNAVAILABLE_DESCRIPTION].join("\n");
+  assert.doesNotMatch(modelText, /\b\d+\.\d+\.\d+\b/);
+  assert.match(DESCRIPTION, /greater than 0/);
+  assert.match(DESCRIPTION, /32K/);
 });
 
 test("output limits mirror Pi's shell pipeline", () => {
