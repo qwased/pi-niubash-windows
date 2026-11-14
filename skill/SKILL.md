@@ -76,8 +76,9 @@ Run the live check first; use the bundled files when the host cannot answer.
 | path/resolution question | `pwd; /usr/bin/pwd; command -v <tool>` | `references/paths.md` |
 | missing Unix command | `wpm installed; wpm search NAME` | `references/wpm.md` |
 
-Useful facts: `NIU_SHELL` carries the `niu.exe` path to every child; `SHELL` is filled with the same
-value only when the host left it unset, so build scripts on `NIU_SHELL`. A command installed during
+Useful facts: `NIU_SHELL` carries the `niu.exe` path to every child; when the host left `SHELL`
+unset, Niubash fills it with the same path in `C:/...` spelling (`NIU_SHELL` keeps `C:\...`), so
+build scripts should use `NIU_SHELL` for a byte-stable value. A command installed during
 the session is runnable immediately (the resolver's negative cache invalidates), so `hash -r` is
 unnecessary. `unset NAME` on an inherited variable removes it for later children.
 

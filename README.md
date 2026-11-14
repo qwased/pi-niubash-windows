@@ -18,7 +18,7 @@ for Windows — and keeps Pi's built-in PowerShell tool untouched next to it.
 |---|---|
 | Pi | `@earendil-works/pi-coding-agent` ≥ 1.5 |
 | Niubash | 1.5.0 or later (`niu.exe`, MIT, <https://unixwin.dev>) |
-| OS | Windows 10 / 11 (the extension is inert on other platforms: it registers no tool and adds no prompt rules) |
+| OS | Windows 11 (verified on the maintainer's machine only; Windows 10 and other builds are untested — verify on your host). On non-Windows the extension is inert: no tool, no prompt rules |
 | Node (tests and local development) | ≥ 22.19 (the Pi SDK requires it) |
 
 `niu.exe` is resolved at extension load. If it is missing, the tool is still registered but every
