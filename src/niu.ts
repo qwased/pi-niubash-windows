@@ -5,7 +5,7 @@
  * resolution order without a Windows host, a Niubash install, or a Pi SDK.
  */
 
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { delimiter, join } from "node:path";
 
 export const NIU_EXE = "niu.exe";
@@ -15,12 +15,30 @@ export type NiuSource = "PI_NIUBASH_PATH" | "PATH" | "%LOCALAPPDATA%" | "%Progra
 
 export type NiuResolution =
   | { found: true; path: string; source: NiuSource }
-  | { found: false; checked: string[] };
+  | { found: false; checked: string[]; notFile?: string[] };
 
 export interface ResolveNiuOptions {
   env?: NodeJS.ProcessEnv;
+  /** Existence probe. Kept for the tests; production uses `isFile` (the default). */
   exists?: (path: string) => boolean;
+  /** File probe. Default: `statSync(path).isFile()`; directories and devices are rejected. */
+  isFile?: (path: string) => boolean;
   platform?: NodeJS.Platform;
+}
+
+/** The tool shells out to `niu.exe`, so only Windows is supported. */
+export function isSupportedPlatform(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "win32";
+}
+
+type PathKind = "file" | "other" | "missing";
+
+function defaultKind(path: string): PathKind {
+  try {
+    return statSync(path).isFile() ? "file" : "other";
+  } catch {
+    return "missing";
+  }
 }
 
 type Env = Record<string, string | undefined>;
@@ -75,24 +93,36 @@ export function installDirectoryCandidates(env: Env): { path: string; source: Ni
  */
 export function resolveNiu(options: ResolveNiuOptions = {}): NiuResolution {
   const env: Env = options.env ?? process.env;
-  const exists = options.exists ?? existsSync;
   const platform = options.platform ?? process.platform;
+  const kindOf = (path: string): PathKind => {
+    if (options.isFile) {
+      if (options.isFile(path)) return "file";
+      return options.exists && !options.exists(path) ? "missing" : "other";
+    }
+    if (options.exists) return options.exists(path) ? "file" : "missing";
+    return defaultKind(path);
+  };
 
   const override = normalizeSpelling(env[ENV_OVERRIDE], env);
   if (override) {
-    return exists(override)
-      ? { found: true, path: override, source: "PI_NIUBASH_PATH" }
+    const kind = kindOf(override);
+    if (kind === "file") return { found: true, path: override, source: "PI_NIUBASH_PATH" };
+    return kind === "other"
+      ? { found: false, checked: [override], notFile: [override] }
       : { found: false, checked: [override] };
   }
 
   const checked: string[] = [];
+  const notFile: string[] = [];
   const seen = new Set<string>();
   const consider = (path: string, source: NiuSource): NiuResolution | undefined => {
     const key = platform === "win32" ? path.toLowerCase() : path;
     if (seen.has(key)) return undefined;
     seen.add(key);
     checked.push(path);
-    return exists(path) ? { found: true, path, source } : undefined;
+    const kind = kindOf(path);
+    if (kind === "other") notFile.push(path);
+    return kind === "file" ? { found: true, path, source } : undefined;
   };
 
   for (const path of pathCandidates(env, platform)) {
@@ -105,5 +135,5 @@ export function resolveNiu(options: ResolveNiuOptions = {}): NiuResolution {
     if (hit) return hit;
   }
 
-  return { found: false, checked };
+  return notFile.length > 0 ? { found: false, checked, notFile } : { found: false, checked };
 }
