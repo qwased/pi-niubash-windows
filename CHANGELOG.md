@@ -4,16 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-11-14
 
 ### Added
 
+- `niubash` tool for Pi, backed by Niubash's `niu -c` and Pi's built-in shell pipeline
+  (truncation to the last 2000 lines / 50KB with a full-output temp file, timeouts with a
+  best-effort process-tree kill, streaming updates, TUI rendering).
+- Prompt metadata that makes `niubash` the default shell and reserves `powershell` for
+  PowerShell-native tasks.
+- `niu.exe` resolution through `PI_NIUBASH_PATH`, `PATH`, and the two standard install
+  directories, with an actionable error tool when nothing is found.
+- Pi-format skill bundled via the package manifest: path contract, MSYS contrast, rc/plugin
+  loading, `wpm`, and the `niu` debugger, with the upstream references included.
+- Unit tests for path resolution and prompt invariants, plus an opt-in end-to-end smoke test that
+  also covers byte truncation, the 1MB structured cap, timeout/abort process cleanup and the
+  command-line limit.
 - CI job `smoke (stub subset)` runs the checks that need no Niubash install on a clean Windows
   runner (`SMOKE_SUBSET=stub`); the full smoke test still skips without Niubash, and
   `SMOKE_REQUIRED=1` turns that skip into a failure.
-- The upstream MIT license text is bundled as `skill/references/LICENSE`; `ATTRIBUTION.md` now
-  records the source URL, capture date and per-file SHA256, and states that the upstream commit/tag
-  is unknown because the bundle carries no git metadata.
+- The upstream MIT license text is bundled as `skill/references/LICENSE`; `ATTRIBUTION.md` records
+  the source URL, capture date and per-file SHA256, and states that the upstream commit/tag is
+  unknown because the bundle carries no git metadata.
 - README section on pi-web subagents: `ext:niubash` selects the extension (entry file
   `src/niubash.ts`), while `defaultActive` stays `false`.
 
@@ -70,20 +82,9 @@ All notable changes to this project are documented here. The format follows
   description.
 - README no longer claims the skill "omits everything the description covers"; it describes the
   actual boundary.
-
-## [0.1.0] - unreleased
-
-### Added
-
-- `niubash` tool for Pi, backed by Niubash's `niu -c` and Pi's built-in shell pipeline
-  (truncation to the last 2000 lines / 50KB with a full-output temp file, timeouts with a
-  best-effort process-tree kill, streaming updates, TUI rendering).
-- Prompt metadata that makes `niubash` the default shell and reserves `powershell` for
-  PowerShell-native tasks.
-- `niu.exe` resolution through `PI_NIUBASH_PATH`, `PATH`, and the two standard install
-  directories, with an actionable error tool when nothing is found.
-- Pi-format skill bundled via the package manifest: path contract, MSYS contrast, rc/plugin
-  loading, `wpm`, and the `niu` debugger, with the upstream references included.
-- Unit tests for path resolution and prompt invariants, plus an opt-in end-to-end smoke test that
-  also covers byte truncation, the 1MB structured cap, timeout/abort process cleanup and the
-  command-line limit.
+- README states that only Windows 11 was tested on the maintainer's machine; Windows 10 and other
+  builds are untested and must be verified on the target host.
+- `skill/SKILL.md` no longer claims `SHELL` and `NIU_SHELL` hold byte-identical values: `SHELL`
+  uses the `C:/...` spelling, `NIU_SHELL` the `C:\...` spelling.
+- `skill/references/LICENSE` is committed with LF line endings, matching the published tarball,
+  and its SHA256 is recorded in `ATTRIBUTION.md`.
