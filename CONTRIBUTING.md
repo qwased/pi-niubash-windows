@@ -6,8 +6,8 @@ Thanks for taking a look. This is a small package; keep changes focused and veri
 
 ```bash
 git clone <repo> && cd pi-niubash-windows
-npm install            # only needed for `npm run typecheck`
-npm test               # unit tests (no Niubash, no Pi needed)
+npm install --include=dev --no-package-lock   # only needed for `npm run typecheck`
+npm test                                       # unit tests (no Niubash, no Pi needed)
 ```
 
 To exercise the real thing, install Niubash 1.5+, then:
@@ -25,6 +25,10 @@ PI_CODING_AGENT_SDK=/path/to/@earendil-works/pi-coding-agent/dist/index.js npm r
   `powershell`, or the file tools.
 - **Keep the description budget in mind.** `src/prompt.ts` is part of every session's context;
   `test/unit.test.mjs` asserts an upper bound and the presence of the load-bearing facts.
+- **Typecheck with the local compiler, never `npx tsc`.** `npx` can fetch the unrelated `tsc` npm
+  package, print a banner and exit 0. Use `npm install --include=dev` and `npm run typecheck`.
+- **Keep the model-facing text version-free.** `src/prompt.ts` must not pin bundled tool versions;
+  `test/unit.test.mjs` asserts it.
 - **Every `promptGuidelines` bullet names the tool.** Bullets are appended flat to Pi's rules.
 - **No runtime dependencies.** Only `peerDependencies` for the host SDK.
 - TypeScript sources must be erasable (no enums, namespaces, or parameter properties) so Node's
