@@ -259,10 +259,10 @@ test("PI_NIUBASH_PATH pointing at a directory is reported as not a file", () => 
 });
 
 test("a directory on PATH is skipped instead of being registered as niu.exe", () => {
-  const directory = join("bin");
-  const toolbox = join("toolbox");
+  const directory = win32.join("bin");
+  const toolbox = win32.join("toolbox");
   const resolution = resolveNiu({
-    env: { PATH: [directory, toolbox].join(delimiter) },
+    env: { PATH: [directory, toolbox].join(win32.delimiter) },
     platform: "win32",
     kindOf: (path) =>
       path === win32.join(toolbox, NIU_EXE) ? "file" : path === win32.join(directory, NIU_EXE) ? "other" : "missing",

@@ -62,6 +62,9 @@ All notable changes to this project are documented here. The format follows
   builtin, and a new probe records the Niubash 1.5.0 pipeline argv-carrier defect (rubash#3511:
   `'` becomes U+0017). The probe turns into a strict assertion once the pinned engine carries
   `0ef814fb`.
+- The win32 PATH fixture builds its entries with `win32.join` and `win32.delimiter` instead of the
+  host's, so the Ubuntu unit job runs the same assertion as Windows; the first CI run caught the
+  host-dependent mix (`false !== true`).
 
 ### Changed
 
