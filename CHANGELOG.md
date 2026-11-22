@@ -4,6 +4,41 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-11-22
+
+Documentation-only release: no `src/`, `test/`, prompt-text or schema change, so 0.1.0 and 0.1.1
+behave identically on the same host. The trigger was a Niubash 1.5.1 self-check that invalidated two
+claims the docs still made.
+
+### Changed
+
+- Niubash **1.5.1** is now the verified host (engine `rubash git 649b3be`, WinuxCmd **1.2.2**).
+  The requirements table asks for 1.5.1 or later and says 1.5.0 still works but carries the
+  pipeline argv defect.
+- The rubash#3511 section became "fixed in Niubash 1.5.1" instead of a live workaround. Re-probed
+  byte-by-byte on 2026-11-22: backtick substitution, `$( )` substitution and both in one word all
+  deliver `it's now` to a piped native child, in `-c` and in `--ec`. The "assign to a variable
+  first" workaround is now scoped to 1.5.0 hosts only, and `niu --version` is named as the way to
+  tell which engine is installed. `skill/SKILL.md` and `docs/DESIGN.md` carry the same correction.
+- `git` is no longer documented as unconditionally niugit. Niubash 1.5.1 keeps a directory your own
+  `PATH` already has ahead of the toolbelt, so on a host whose `PATH` starts with
+  `C:\Program Files\Git\cmd`, `git` is Git for Windows 2.56.0 and niugit must be called by full
+  path. `rg`, `ls`, `find`, `grep`, `awk` and `sed` still resolve to `winuxcmd`.
+- `sed` is no longer described as reached "via a shell emulation": on WinuxCmd 1.2.2 both
+  `type sed` and `type -a sed` name the `winuxcmd` binary.
+- `skill/references/ATTRIBUTION.md` records that the four snapshots are byte-identical to the
+  bundle embedded in Niubash 1.5.1 (same SHA256), so no reference needed re-capture; the only
+  upstream growth is the reference `SKILL.md`, which this package deliberately does not bundle.
+- `docs/DESIGN.md` host facts, command-layer table and acceptance item 6 now match 1.5.1, and the
+  rubash#3511 risk row records the fix instead of a pending pin bump.
+
+### Not changed
+
+- `src/`, `test/`, the tool description, guidelines and schema are identical to 0.1.0. The smoke
+  argv probe already took its strict branch (`["it's now"]`) on 1.5.1; retiring its remaining
+  U+0017 known-issue branch is a code change, left for a later patch so this release stays
+  documentation-only.
+
 ## [0.1.0] - 2026-11-14
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "pi-niubash-windows",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Niubash (native Windows bash) as a Pi tool, coexisting with Pi's PowerShell tool.",
   "license": "MIT",
   "author": "qwased",
