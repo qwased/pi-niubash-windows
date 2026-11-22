@@ -17,29 +17,29 @@ for Windows — and keeps Pi's built-in PowerShell tool untouched next to it.
 | Component | Version |
 |---|---|
 | Pi | `@earendil-works/pi-coding-agent` ≥ 1.5 |
-| Niubash | 1.5.0 or later (`niu.exe`, MIT, <https://unixwin.dev>) |
+| Niubash | 1.5.1 or later (`niu.exe`, MIT, <https://unixwin.dev>). 1.5.0 still works but ships the pipeline argv defect described below |
 | OS | Windows 11 (verified on the maintainer's machine only; Windows 10 and other builds are untested — verify on your host). On non-Windows the extension is inert: no tool, no prompt rules |
 | Node (tests and local development) | ≥ 22.19 (the Pi SDK requires it) |
 
 `niu.exe` is resolved at extension load. If it is missing, the tool is still registered but every
 call returns an actionable error instead of failing silently.
 
-### Known upstream issue: Niubash 1.5.0 pipeline argv
+### Upstream argv defect: fixed in Niubash 1.5.1
 
-Niubash 1.5.0 ships a `rubash` engine from before
-[rubash#3511](https://github.com/unixwin/rubash/pull/3511). When a pipeline member has a
-double-quoted argument that mixes a live command substitution with an apostrophe, the child
-receives U+0017 instead of `'`:
+Niubash 1.5.0 shipped a `rubash` engine from before
+[rubash#3511](https://github.com/unixwin/rubash/pull/3511): when a pipeline member had a
+double-quoted argument that mixed a live command substitution with an apostrophe, the child
+received U+0017 instead of `'`.
 
-```bash
-node -e "process.stdout.write(process.argv[1])" "it's `echo now`" | cat   # it\x17s now
-x=$(echo now); node -e "process.stdout.write(process.argv[1])" "it's $x" | cat  # it's now
-```
+**Niubash 1.5.1 fixes it** (engine `rubash git 649b3be`). Re-probed byte-by-byte on 2026-11-22:
+backtick substitution, `$( )` substitution and both in one word all deliver `it's now` to a piped
+native child, and `niu --ec` behaves the same. Only a 1.5.0 host needs the workaround — compute the
+substitution into a variable before the pipeline (`x=$(date); cmd "it's $x" | cat`); `--ec` does
+not avoid it there. `niu --version` prints the pinned engine rev, so the installed host answers
+this directly.
 
-The fix is merged upstream and ships with the next Niubash release whose
-`scripts/release/rubash-pin.json` includes `0ef814fb`. Until then, compute the substitution into a
-variable before the pipeline. `niu --ec` does **not** avoid it. The smoke test records the defect as
-a known issue and asserts strictly once the engine is fixed.
+The smoke test asserts the fixed behaviour and only reports a known defect if the probe still sees
+U+0017.
 
 ## Install
 
@@ -168,20 +168,25 @@ if (r.exit_code !== 0) throw new Error(r.output);
 
 ## Known differences inside the shell
 
-Niubash prepends four `winuxcmd` directories to `PATH` for the processes it spawns. That is by
+Niubash injects four `winuxcmd` directories into `PATH` for the processes it spawns. That is by
 design (it is how the Unix toolbelt ships) but it means "the command you asked for" is not always
-the build you expected. The versions below were read on this review host; they follow the
-installed Niubash release and are deliberately not part of the model-facing text:
+the build you expected. Since Niubash 1.5.1 the toolbelt no longer outranks a directory your own
+`PATH` already has ahead of the system ones: on this review host `PATH` starts with
+`C:\Program Files\Git\cmd`, so `git` is Git for Windows and niugit has to be named by full path.
+The versions below were read on that host (Niubash 1.5.1); they follow the installed release and
+are deliberately not part of the model-facing text:
 
 | Command | Inside `niubash` | Notes |
 |---|---|---|
-| `git` | **niugit 2.56.0** (`winuxcmd\usr\bin\git.exe`) | shares your global `.gitconfig`; commits are readable by stock Git |
+| `git` | whatever `PATH` finds first — here **Git for Windows 2.56.0** (`C:\Program Files\Git\cmd`) | niugit **2.56.0.windows.4.niugit** ships at `winuxcmd\usr\bin\git.exe`; both read your global `.gitconfig` and their commits are mutually readable |
 | `rg` | **ripgrep 15.2.0** (`winuxcmd`) | same version and revision as the copy Pi manages |
-| `ls`, `find`, `grep`, `awk` | **WinuxCmd 1.2.1** applets | GNU-compatible implementations, not the Windows tools |
-| `sed` | WinuxCmd 1.2.1 via a shell emulation | `type sed` reports the emulation, `type -a sed` the `winuxcmd` binary |
+| `ls`, `find`, `grep`, `awk` | **WinuxCmd 1.2.2** applets | GNU-compatible implementations, not the Windows tools |
+| `sed` | WinuxCmd 1.2.2 | GNU-compatible applet; `type sed` and `type -a sed` both name the `winuxcmd` binary |
 | `tar` | **Windows' bsdtar** (`C:\Windows\System32\tar.exe`) | not a WinuxCmd applet; this host ships bsdtar 3.8.9 |
 
-Need the stock binary? Use the full path, e.g. `"/c/Program Files/Git/cmd/git.exe" status`.
+Need the other build? Use the full path and `type -a <cmd>`, which lists every match in `PATH`
+order: `"$LOCALAPPDATA/Programs/Niubash/winuxcmd/usr/bin/git.exe" status` runs niugit, and
+`"/c/Program Files/Git/cmd/git.exe" status` runs stock Git.
 Nothing outside the shell changes: Pi's `grep` and `find` tools spawn their own managed
 `rg.exe` / `fd.exe` by absolute path, and `ls` / `read` / `edit` / `write` are pure Node `fs`.
 
@@ -233,7 +238,7 @@ installing or moving Niubash.
 | `... which is not a niu.exe file` | fix `PI_NIUBASH_PATH`; it must name `niu.exe` itself |
 | `PI_NIUBASH_PATH still contains an unexpanded %NAME% reference` | Pi does not expand `%LOCALAPPDATA%`-style variables; write the literal path (a leading `~` is expanded) |
 | Chinese output garbled | should not happen (Niubash sets the console to UTF-8); if it does, capture the command and report it |
-| `git` behaves unexpectedly | you are running niugit; call the stock binary by full path |
+| `git` behaves unexpectedly | check `type -a git`: the first hit is whatever your `PATH` puts first (stock Git on this host, niugit when `winuxcmd` comes first); call the other build by full path |
 | Command hangs | no timeout is applied by default — retry with `timeout` (greater than 0) |
 | `Command line too long` | split the command, or write the script to a file and run the file |
 | Tool ran with the wrong cwd | the working directory comes from the session; check with `pwd` |

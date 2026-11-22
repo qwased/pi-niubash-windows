@@ -3,7 +3,7 @@
 - 状态：**已安装并验收**（P1–P5 完成；P5 安装于 2026-11-14 19:28；二轮复核与验收方法分别见仓库内的 `docs/REVIEW-R2.md`、`docs/ACCEPTANCE-METHOD.md`，这两份文件不随 npm 包发布）
 - 仓库：本仓库（本地检出；不记录本机绝对路径）
 - 目标宿主：Pi coding agent `@earendil-works/pi-coding-agent` **1.5.2**（本机经 `pi-web` 0.16.0 运行）
-- 目标 shell：Niubash **1.5.0**（本机复核时由 `PATH` 解析到 `niu.exe`；安装路径随主机不同）
+- 目标 shell：Niubash **1.5.1**（engine `rubash git 649b3be`、`winuxcmd 1.2.2`；本机复核时由 `PATH` 解析到 `niu.exe`，安装路径随主机不同）
 - 上游资料：Niubash 发布包中的 skill bundle（`SKILL.md` 原始版 + `references/`）；本仓库 `skill/` 为其 Pi 语境重写版
 
 面向使用者的安装/用法说明见 [`README.md`](../README.md)；本文记录**为什么这样做**、已验证的宿主事实、冲突分析与验收口径。
@@ -30,7 +30,7 @@
 
 | 事实 | 证据 |
 |---|---|
-| `niu -c` 从 Node `spawn` 逐字传 argv | 引号 `a"b`、结尾反斜杠 `C:\dir\`、多行、heredoc、CJK 全部逐字正确 |
+| `niu -c` 从 Node `spawn` 逐字传 argv | 引号 `a"b`、结尾反斜杠 `C:\dir\`、多行、heredoc、CJK 全部逐字正确；1.5.1 上管道成员的反引号/`$( )`/二者混合 + 撇号逐字节均为 `it's now`（rubash#3511 已修，1.5.0 会变 U+0017） |
 | 输出编码 | Niubash 为自身与子进程设置 UTF-8 代码页（65001）；常规文本与 CJK 输出已验证。Pi 按 UTF-8 解码捕获字节，非法原始字节会被替换为 U+FFFD，因此不应用作文本通道传二进制 |
 | 退出码透传 | `exit 3`→3、`false`→1、命令未找到→127 |
 | 流式输出 | `echo a; sleep 0.4; echo b` 两段分别到达，可驱动 `onUpdate` |
@@ -39,7 +39,7 @@
 | 管道陷阱 | `createBashToolDefinition(cwd,{shellPath})` 会忽略 `shellPath`（内部先填了默认 `operations`）→ 必须显式传 `operations` |
 | 临时文件前缀 | 内置管道写死为 `pi-bash-*`（`createShellToolDefinition` 未导出，不 fork 内部实现） |
 | 编码 | 不需要 PowerShell 工具的 `[Console]::OutputEncoding` 前缀，Niubash 自己处理 |
-| 命令解析 | `git`→niugit 2.56.0（与系统 git 共用 gitconfig，提交哈希互通）、`rg`→winuxcmd ripgrep 15.2.0（与 Pi 托管 rg 同版本同 rev `e89fff89ac`、同 `+pcre2`）、`ls`/`find`/`grep`/`awk`→WinuxCmd 1.2.1、`sed`→WinuxCmd 1.2.1（shell 仿真）、`tar`→**系统 `C:\Windows\System32\tar.exe`（bsdtar 3.8.9，非 WinuxCmd）** |
+| 命令解析 | 全部遵循 `PATH`：`git`→**宿主 Git for Windows 2.56.0**（本机 `PATH` 首项是 `C:\Program Files\Git\cmd`，1.5.1 不再把它挤到 toolbelt 之后；niugit 2.56.0.windows.4 仍在 `winuxcmd\usr\bin\git.exe`，全路径可调，两者共用 gitconfig、提交哈希互通）、`rg`→winuxcmd ripgrep 15.2.0（与 Pi 托管 rg 同版本同 rev `e89fff89ac`、同 `+pcre2`）、`ls`/`find`/`grep`/`awk`/`sed`→WinuxCmd 1.2.2、`tar`→**系统 `C:\Windows\System32\tar.exe`（bsdtar 3.8.9，非 WinuxCmd）** |
 
 ---
 
@@ -156,12 +156,12 @@ Niubash 只给**自己 spawn 的子进程**前置 `winuxcmd\{usr/local/bin, usr/
 
 | 命令 | Pi 外部（pwsh/系统） | niubash 内部 |
 |---|---|---|
-| `git` | `C:\Program Files\Git\cmd\git.exe` | niugit 2.56.0 |
+| `git` | `C:\Program Files\Git\cmd\git.exe` | **同一份**系统 Git 2.56.0（1.5.1 保留宿主 `PATH` 前缀优先；niugit 2.56.0.windows.4 在 `winuxcmd\usr\bin\git.exe`，需全路径） |
 | `rg` | `.pi\agent\bin\rg.exe` 15.2.0 | winuxcmd ripgrep 15.2.0 |
-| `ls` `find` `grep` `sed` `awk` | 系统/自备 | WinuxCmd 1.2.1 applet（`sed` 为 shell 仿真） |
+| `ls` `find` `grep` `sed` `awk` | 系统/自备 | WinuxCmd 1.2.2 applet（`sed` 由 winuxcmd 二进制直接承担，`type`/`type -a` 一致） |
 | `tar` | `C:\Windows\System32\tar.exe`（bsdtar 3.8.9） | 同一份系统 bsdtar（**不是** WinuxCmd applet） |
 
-实测：niugit 与系统 git 共用同一份全局 gitconfig；niugit 提交 `b6292df` 可被系统 git 读到；两者 rg 同版本同 rev。真实影响仅为"模型以为在跑系统工具"。对策：description、guideline 3、skill 的路径契约与全路径逃生舱。
+实测（1.5.0 期）：niugit 与系统 git 共用同一份全局 gitconfig；niugit 提交 `b6292df` 可被系统 git 读到；两者 rg 同版本同 rev。1.5.1 上 `git` 已回落到系统 Git，差异仅剩 `rg`/`ls` 等 applet。对策：description、guideline 3、skill 的路径契约与全路径逃生舱。
 
 ### 5.4 两个"看起来像冲突"但不是的点
 
@@ -282,7 +282,7 @@ pi-niubash-windows/
 3. `exit 3` → `isError`，`Command exited with code 3`
 4. `sleep 5` + `timeout: 1` → 超时错误；`taskkill` 异步，需用 `$$` / `$!` + 有界轮询确认进程消失（不得以“返回时计数 0”作同步断言）
 5. heredoc + 管道：`cat <<EOF | tr a-z A-Z` → `HELLO`
-6. `git --version` → `2.56.0.windows.4.niugit`
+6. `git --version` → `2.56.0.windows.4`（宿主 `PATH` 前缀优先）；`command -v git` 与 `type -a git` 的第一项须一致；niugit 需全路径 `"$LOCALAPPDATA/Programs/Niubash/winuxcmd/usr/bin/git.exe" --version` → `2.56.0.windows.4.niugit`
 
 **B. 共存**
 
@@ -319,7 +319,7 @@ pi-niubash-windows/
 | niugit/winuxcmd 抢占 `git`/`rg` | 模型误判工具版本 | description + guideline 3 + skill；全路径逃生舱；实测同 config、同 rg 版本 |
 | `createBashToolDefinition` 忽略 `shellPath` | 静默退回 Git Bash | 强制走 `operations: createLocalBashOperations({shellPath})`；smoke 断言 `command -v ls` 指向 winuxcmd |
 | 临时文件前缀固定 `pi-bash-` | 仅外观 | README 说明，不 fork 内部实现 |
-| `-c` 极端引号破例（已观测，rubash#3511） | 管道成员的“双引号参数 + 命令替换 + 撇号”会把 `'` 变成 U+0017，argv 静默篡改；`--ec` 同样复现 | 上游已修（`0ef814fb`，2026-11-14）；等 Niubash bump `scripts/release/rubash-pin.json` 后发行；SKILL/README 记录触发面与“先赋值”绕法；smoke 的 known-issue 探针在修复后转严格断言 |
+| `-c` 极端引号破例（rubash#3511，**1.5.1 已修**） | 1.5.0 上管道成员的“双引号参数 + 命令替换 + 撇号”会把 `'` 变成 U+0017，argv 静默篡改；`--ec` 同样复现 | 1.5.1（engine `rubash git 649b3be`）逐字节复核通过：反引号/`$( )`/混合三种载体均得 `it's now`；README/SKILL/DESIGN 已把 workaround 限定为“仅 1.5.0 宿主”；需求下限提到 1.5.1；smoke 探针现走严格分支（`["it's now"]`），仍保留 U+0017 的 known-issue 提示以覆盖旧宿主 |
 | niu 未安装/被卸载 | 工具不可用 | 降级 stub + 安装指引；`PI_NIUBASH_PATH` 可覆盖 |
 | pi-web 不支持热重载 | 改动后不生效 | 以新开会话为准 |
 | 无 PTY | `ssh -t`/`vim`/`tmux` 失效 | description 明示，交给 pwsh/WSL |

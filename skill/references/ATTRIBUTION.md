@@ -16,6 +16,11 @@ is noted below:
   in the `README.md` and `LICENSE` files of the installed Niubash 1.5.0 tree.
 - Snapshot: the skill bundle shipped with that install; the bundle files carry a
   2026-11-03 file timestamp, and the copies here were re-verified byte-for-byte on 2026-11-14.
+- Re-verified against **Niubash 1.5.1** on 2026-11-22: the bundle embedded in the 1.5.1 binary
+  (`niu skill install --target dir:<tmp>`, bundle digest `2e02d497…`) yields the **same bytes** for
+  all four documents — every SHA256 in the table above still matches. Only the upstream
+  `SKILL.md` grew (13,427 bytes, adding a debugging section and engine-fix notes); it is not
+  bundled here, because `skill/SKILL.md` is the Pi-specific rewrite described at the bottom.
 - **Commit / tag: unknown.** The bundle carries no git metadata, so the exact upstream commit or
   release tag that produced these files cannot be verified from this copy. The Niubash version
   number is not a commit identifier; do not treat it as one.
@@ -28,5 +33,8 @@ is noted below:
 `skill/SKILL.md` is a Pi-specific rewrite and does not reproduce the upstream skill text
 wholesale; consult upstream for the canonical skill.
 
-When updating Niubash, diff these files against the new bundle, record the new hashes and the
-capture date, and refresh them rather than editing in place, so provenance stays verifiable.
+When updating Niubash, diff these files against the new bundle (the binary can emit its own copy:
+`niu skill install --target dir:<tmp>`), record the new hashes and the capture date, and refresh
+them rather than editing in place, so provenance stays verifiable. A version bump with identical
+bytes is worth recording explicitly — as done for 1.5.1 above — so a later reader does not assume
+the snapshot is stale just because the host moved on.

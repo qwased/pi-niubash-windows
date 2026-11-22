@@ -63,14 +63,18 @@ variable: there is no `MSYS_NO_PATHCONV`-equivalent. Full table: `references/pat
 Slice `output` in the script when only a summary is needed; `truncated` does not reflect the
 2000-line / 50KB rule.
 
-## Known upstream defects
+## Upstream defects
 
-- Niubash 1.5.0 (rubash before `0ef814fb`) corrupts a pipeline member's argv: in a double-quoted
-  word that mixes a live command substitution with an apostrophe, the child receives U+0017
-  instead of `'`. Upstream fix: rubash#3511 (merged); it ships in the next Niubash release whose
-  `scripts/release/rubash-pin.json` includes `0ef814fb`. Workaround: compute the substitution into
-  a variable first, e.g. `x=$(date); cmd "it's $x" | cat`. `niu --ec` does not avoid it. Check the
-  pinned engine with `niu --version` (it prints the rubash rev).
+- **Fixed in Niubash 1.5.1 — no workaround needed.** Niubash 1.5.0 (rubash before `0ef814fb`)
+  corrupted a pipeline member's argv: in a double-quoted word that mixed a live command
+  substitution with an apostrophe, the child received U+0017 instead of `'` (rubash#3511). The
+  1.5.1 engine (`rubash git 649b3be`) delivers `it's now` through backtick substitution, `$( )`
+  and both in one word alike, in `-c` and in `--ec`. On a 1.5.0 host only, compute the
+  substitution into a variable first, e.g. `x=$(date); cmd "it's $x" | cat`. `niu --version` prints
+  the pinned engine rev, so the host itself answers which behaviour applies.
+- Command resolution inside the shell follows `PATH`: Niubash keeps a directory your own `PATH`
+  already has ahead of the toolbelt, so `git` can be stock Git for Windows (niugit then lives at
+  `winuxcmd\usr\bin\git.exe`). `type -a <cmd>` lists every match; never assume the toolbelt won.
 
 ## Symptom → verify → reference
 
